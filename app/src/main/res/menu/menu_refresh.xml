@@ -1,0 +1,10 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context="com.abomko.tesslatrwifi.MainActivity">
+    <item android:id="@+id/menu_refresh"
+        android:icon="@drawable/ic_action_refresh_white_24dp"
+        android:title="@string/description_refresh"
+        android:orderInCategory="1"
+        app:showAsAction="always" />
+</menu>
