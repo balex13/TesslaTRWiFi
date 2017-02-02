@@ -13,9 +13,12 @@ import android.content.SharedPreferences;
 import android.content.SyncStatusObserver;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.preference.PreferenceManager;
 import android.support.annotation.NonNull;
 import android.support.design.widget.FloatingActionButton;
+import android.support.v4.content.WakefulBroadcastReceiver;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
 import android.view.LayoutInflater;
@@ -33,6 +36,8 @@ import android.widget.Toast;
 import com.abomko.tesslatrwifi.accounts.GenericAccountService;
 
 import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,52 +67,55 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
         prefs.registerOnSharedPreferenceChangeListener(this);
         myListAdaper = new MyListAdaper(this, R.layout.list_item, listData, data);
         mainList.setAdapter(myListAdaper);
-        mainList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
-            @Override
-            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
-                Toast.makeText(MainActivity.this, "List item was clicked at " + position, Toast.LENGTH_SHORT).show();
-            }
-        });
+//        mainList.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+//            @Override
+//            public void onItemClick(AdapterView<?> parent, View view, int position, long id) {
+//                Toast.makeText(MainActivity.this, "List item was clicked at " + position, Toast.LENGTH_SHORT).show();
+//            }
+//        });
         mainList.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
             @Override
             public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
-                Toast.makeText(MainActivity.this, "List item was long clicked at " + position, Toast.LENGTH_SHORT).show();
+//                Toast.makeText(MainActivity.this, "List item was long clicked at " + position, Toast.LENGTH_SHORT).show();
 
-                Intent intentAlarm = new Intent(view.getContext(), AlarmActivity.class);
-                intentAlarm.putExtra("EXTRA_POSITION", position);
-                startActivityForResult(intentAlarm, 0);
+                Intent intentAlarmSettings = new Intent(view.getContext(), AlarmSettingsActivity.class);
+                intentAlarmSettings.putExtra("EXTRA_POSITION", position);
+                startActivityForResult(intentAlarmSettings, 0);
 
                 return true;
             }
         });
 
-        FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         final Context context = this.getApplicationContext();
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-//                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-//                        .setAction("Action", null).show();
-
-                SyncUtils.CreateSyncAccount(MainActivity.this);
-                SyncUtils.TriggerRefresh();
-
-                //mNotificationManager.notify(1, createNotification(true));
-                Toast.makeText(context, "Current temperature is: " + prefs.getString("temperature", "--"), Toast.LENGTH_SHORT).show();
-            }
-        });
         mNotificationManager = (NotificationManager) this.getSystemService(Context
                 .NOTIFICATION_SERVICE);
 
         SyncUtils.CreateSyncAccount(this);
     }
 
+    public static void setAlarm(Context context, long delay) {
+        Intent startIntent = new Intent(context, AlarmReceiver.class);
+        PendingIntent pendingIntent = PendingIntent.getBroadcast(context, 1, startIntent,PendingIntent.FLAG_UPDATE_CURRENT );
+        AlarmManager alarmManager = (AlarmManager) context.getApplicationContext().getSystemService(Context.ALARM_SERVICE);
+        int ALARM_TYPE = AlarmManager.RTC;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            alarmManager.setExact(ALARM_TYPE, delay, pendingIntent);
+        } else {
+            alarmManager.set(ALARM_TYPE, delay, pendingIntent);
+        }
+    }
+
     private void updateListContent() {
         int deviceCount = prefs.getInt("device_count", 0);
+        boolean callAlarm = false;
+        String alarmTitle = "";
+        String alarmText = "";
         for(int i = 1; i <= deviceCount; i++) {
             Map<String, String> itemData = new HashMap<String, String>();
-            itemData.put("main_label", prefs.getString("device_label_" + i, "Device" + i));
+            String deviceTitle = prefs.getString("device_label_" + i, "Device" + i);
+            itemData.put("main_label", deviceTitle);
             String temperature = prefs.getString("temperature_" + i, "00");
+            String temperaturePrevious = prefs.getString("temperature_" + i + "_prev", "");
             String temperatureSwitch = prefs.getString("temperature_" + i + "_switch", "00");
             boolean isPlus = Float.parseFloat(temperature) >= 0;
             itemData.put("temperature", (isPlus?"+":"-") + " " + temperature + " °C");
@@ -122,10 +130,37 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
             if (listData.size()<i) {
                 listData.add(i - 1, "Device" + i);
             }
+
+            int position = i - 1;
+            int count = prefs.getInt("device_" + position + "_alarm_count", 0);
+            if (count > 0) {
+                for (int j = 0; j<count; j++) {
+                    //show alarms
+                    String title = prefs.getString("device_" + position + "_alarm_" + j + "title", "");
+                    String summary = prefs.getString("device_" + position + "_alarm_" + j + "temperature", "");
+                    if (!summary.isEmpty() && !temperaturePrevious.isEmpty()
+                        && Float.parseFloat(temperature) < Float.parseFloat(summary)
+                        && Float.parseFloat(temperaturePrevious) > Float.parseFloat(summary)
+                    ) {
+                        callAlarm = true;
+                        alarmTitle = deviceTitle + " temperature is " + temperature;
+                        if (!alarmText.isEmpty()) {
+                            alarmText += "\n";
+                        }
+                        alarmText += title + " alarm for " + deviceTitle + ": temperature is " + temperature + " below then " + summary;
+                        prefs.edit().putString("temperature_" + i + "_prev", temperature).apply();
+                    }
+                }
+            }
         }
         if (myListAdaper != null) {
             myListAdaper.notifyDataSetChanged();
         }
+        if (callAlarm && mNotificationManager != null) {
+            //setAlarm(this, (new Date().getTime()) + 1 * 60 * 1000);
+            mNotificationManager.notify(1, createNotification(true, alarmTitle, alarmText));
+        }
+
     }
 
     @Override
@@ -165,13 +200,13 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
      *
      * @return A Notification instance.
      */
-    private Notification createNotification(boolean makeHeadsUpNotification) {
+    private Notification createNotification(boolean makeHeadsUpNotification, String title, String text) {
         Notification.Builder notificationBuilder = new Notification.Builder(this)
                 .setSmallIcon(R.drawable.ic_notifications_black_24dp)
 //                .setPriority(Notification.PRIORITY_DEFAULT)
 //                .setCategory(Notification.CATEGORY_MESSAGE)
-                .setContentTitle("Sample Notification")
-                .setContentText("This is a normal notification.");
+                .setContentTitle(title)
+                .setContentText(text);
         if (makeHeadsUpNotification) {
             Intent push = new Intent();
             push.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -180,7 +215,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
             PendingIntent fullScreenPendingIntent = PendingIntent.getActivity(this, 0,
                     push, PendingIntent.FLAG_CANCEL_CURRENT);
             notificationBuilder
-                    .setContentText("Heads-Up Notification on Android L or above.")
+                    .setContentText(text)
                     .setFullScreenIntent(fullScreenPendingIntent, true);
         }
         return notificationBuilder.getNotification();// build();
@@ -222,7 +257,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
                 mainViewholder = (ViewHolder) convertView.getTag();
                 mainViewholder.main_label.setText(trObjects.get(position).get("main_label"));
                 mainViewholder.temperature.setText(trObjects.get(position).get("temperature"));
-                mainViewholder.temperature.setText(trObjects.get(position).get("temperature_switch"));
+                mainViewholder.temperature_switch.setText(trObjects.get(position).get("temperature_switch"));
             }
 //            mainViewholder.button.setOnClickListener(new View.OnClickListener() {
 //                @Override
@@ -280,6 +315,7 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
                 refreshItem.setActionView(R.layout.actionbar_indeterminate_progress);
             } else {
                 refreshItem.setActionView(null);
+                updateListContent();
             }
         }
     }
@@ -317,5 +353,4 @@ public class MainActivity extends AppCompatActivity implements SharedPreferences
             });
         }
     };
-
 }

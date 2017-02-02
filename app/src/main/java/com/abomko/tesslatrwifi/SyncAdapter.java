@@ -54,6 +54,7 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
@@ -138,6 +139,10 @@ class SyncAdapter extends AbstractThreadedSyncAdapter {
                 if (!deviceId.isEmpty()) {
                     String[] temperatures = this.readData(deviceId);
                     if (temperatures.length == 2) {
+                        String oldValue = prefs.getString("temperature_" + i, "");
+                        if (!oldValue.isEmpty()) {
+                            prefs.edit().putString("temperature_" + i + "_prev", oldValue).apply();
+                        }
                         prefs.edit().putString("temperature_" + i, String.valueOf(temperatures[0])).apply();
                         prefs.edit().putString("temperature_" + i + "_switch", String.valueOf(temperatures[1])).apply();
                         Log.i(TAG, "Temperature is: " + String.valueOf(temperatures[0]));
@@ -148,7 +153,7 @@ class SyncAdapter extends AbstractThreadedSyncAdapter {
             syncResult.stats.numIoExceptions++;
         }
 
-        DateFormat df = new SimpleDateFormat("EEE, d MMM yyyy, HH:mm:ss");
+        DateFormat df = new SimpleDateFormat("EEE, d MMM yyyy, HH:mm:ss", Locale.getDefault());
         String date = df.format(Calendar.getInstance().getTime());
         Log.i(TAG, date + " Network synchronization complete");
     }

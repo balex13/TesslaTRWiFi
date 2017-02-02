@@ -65,4 +65,7 @@
     <string name="button_add">Add</string>
     <string name="default_temperature">- 00.00 °C</string>
     <string name="tr_description">tr description</string>
+    <string name="alarm_temperature">Alarm temperature</string>
+    <string name="button_delete">Delete</string>
+    <string name="button_edit">Edit</string>
 </resources>
